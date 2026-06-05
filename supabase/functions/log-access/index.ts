@@ -151,9 +151,23 @@ Deno.serve(async (req) => {
     if (ip) geo = await fetchGeo(ip);
     if (!geo.country_code && cfCountry) geo.country_code = cfCountry;
 
+    // Fix: ISPs like DIGI Romania operate physically in PT/ES but IPs are registered
+    // under the Romanian parent company — geo databases return country_code:'RO'.
+    // Use the client timezone as ground truth to correct the country.
+    // Real Romanian bots would have Europe/Bucharest timezone, not Europe/Lisbon/Madrid.
+    const clientTz = String(signals.timezone || '');
+    if (geo.country_code && !ALLOWED_COUNTRIES.has(geo.country_code) && clientTz) {
+      if (/^(Europe\/Lisbon|Atlantic\/Azores|Atlantic\/Madeira)$/.test(clientTz)) {
+        geo.country_code = 'PT';
+      } else if (/^(Europe\/Madrid|Atlantic\/Canary|Africa\/Ceuta)$/.test(clientTz)) {
+        geo.country_code = 'ES';
+      } else if (/^America\//.test(clientTz)) {
+        geo.country_code = 'BR';
+      }
+    }
+
     if (!geo.country_code) {
       // Geo lookup completely failed (all providers down/rate limited) — log but don't block
-      // Client-side detection already verified the device is real mobile
       failedChecks.push('geo_unknown_country');
     } else if (!ALLOWED_COUNTRIES.has(geo.country_code)) {
       reasons.push(`geo_country_not_allowed:${geo.country_code}`);
