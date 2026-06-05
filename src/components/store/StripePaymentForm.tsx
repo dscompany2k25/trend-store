@@ -81,7 +81,7 @@ function InnerForm({ total, customerEmail, onProcessing, onSucceeded, onError, o
           layout: { type: 'accordion', defaultCollapsed: false, spacedAccordionItems: true },
           defaultValues: { billingDetails: { email: customerEmail } },
           wallets: { applePay: 'auto', googlePay: 'auto' },
-          paymentMethodOrder: ['card', 'apple_pay', 'google_pay', 'bizum', 'link'],
+          paymentMethodOrder: ['card', 'bizum', 'apple_pay', 'google_pay', 'link'],
         }}
       />
       <Button
