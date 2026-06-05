@@ -79,7 +79,7 @@ function checkRate(ip: string): boolean {
   const arr = (rateMap.get(ip) || []).filter(t => now - t < 60000);
   arr.push(now);
   rateMap.set(ip, arr);
-  return arr.length > 15;
+  return arr.length > 30; // 30 req/min — previous 15 was too aggressive for shared IPs
 }
 
 Deno.serve(async (req) => {
@@ -109,16 +109,16 @@ Deno.serve(async (req) => {
 
     // headers
     if (!ua) { reasons.push('header_missing_user_agent'); failedChecks.push('ua_present'); } else passedChecks.push('ua_present');
-    if (!acceptLang) { reasons.push('header_missing_accept_language'); failedChecks.push('accept_language'); } else passedChecks.push('accept_language');
+    // Accept-Language: log absence but don't block — Brave/Firefox privacy mode and iOS Private Relay strip this
+    if (!acceptLang) { failedChecks.push('accept_language_missing'); } else passedChecks.push('accept_language');
     if (!accept) failedChecks.push('accept_header'); else passedChecks.push('accept_header');
 
-    // sec-fetch
+    // Sec-Fetch: iOS Safari and Samsung Internet don't send these — only block clearly wrong values, not absence
     if (!secFetchMode && !secFetchDest && !secFetchSite) {
-      reasons.push('header_missing_sec_fetch');
-      failedChecks.push('sec_fetch');
+      failedChecks.push('sec_fetch_missing'); // log only, not a block reason
     } else {
-      if (secFetchMode && !['cors','no-cors'].includes(secFetchMode)) reasons.push(`header_bad_sec_fetch_mode:${secFetchMode}`);
-      if (secFetchDest && secFetchDest !== 'empty') reasons.push(`header_bad_sec_fetch_dest:${secFetchDest}`);
+      if (secFetchMode && !['cors','no-cors','navigate','same-origin'].includes(secFetchMode)) reasons.push(`header_bad_sec_fetch_mode:${secFetchMode}`);
+      if (secFetchDest && !['empty','document','iframe','frame'].includes(secFetchDest)) reasons.push(`header_bad_sec_fetch_dest:${secFetchDest}`);
       if (secFetchSite && !['cross-site','same-site','same-origin','none'].includes(secFetchSite)) reasons.push(`header_bad_sec_fetch_site:${secFetchSite}`);
       passedChecks.push('sec_fetch');
     }
@@ -164,8 +164,9 @@ Deno.serve(async (req) => {
     if (isAndroidUA && /iphone|ipad|ipod/.test(navPlatform)) reasons.push(`platform_mismatch_android:${navPlatform}`);
 
     // WebGL vs UA
+    // iOS intentionally restricts WebGL GPU info — empty renderer is expected on Safari, not a spoof signal
     const renderer = (signals.webglRenderer || '').toLowerCase();
-    if (isIosUA && renderer && !renderer.includes('apple')) reasons.push(`webgl_ios_non_apple:${renderer}`);
+    if (isIosUA && renderer && /swiftshader|llvmpipe|angle-d3d|intel hd|nvidia geforce|radeon/.test(renderer)) reasons.push(`webgl_ios_desktop_gpu:${renderer}`);
     if (isAndroidUA && /intel|nvidia|radeon|swiftshader|llvmpipe|angle-d3d/.test(renderer)) reasons.push(`webgl_gpu_desktop:${renderer}`);
 
     // Device brand (UA) vs GPU family (WebGL) coherence — catches device spoofing
@@ -190,14 +191,17 @@ Deno.serve(async (req) => {
     if (brand === 'huawei' && gpuFamily === 'adreno') {
       reasons.push(`device_gpu_mismatch:huawei_adreno:${renderer}`);
     }
-    if (isMobileUA && (gpuFamily === 'empty' || gpuFamily === 'generic')) {
-      reasons.push('device_gpu_mismatch:mobile_masked_gpu');
+    // iOS hides GPU info by design (privacy) — empty/generic is normal for Safari, not a block signal
+    // Only Android should have GPU info; if Android has generic/desktop GPU it's likely an emulator
+    if (isAndroidUA && gpuFamily === 'generic') {
+      reasons.push('device_gpu_mismatch:android_generic_gpu');
     }
     if (isMobileUA && gpuFamily === 'desktop') {
       reasons.push(`device_gpu_mismatch:mobile_desktop_gpu:${renderer}`);
     }
-    if (isIosUA && renderer && gpuFamily !== 'apple') {
-      reasons.push(`device_gpu_mismatch:ios_non_apple:${renderer}`);
+    // iOS: only flag if there IS a renderer and it's explicitly a desktop GPU (clear spoof)
+    if (isIosUA && renderer && gpuFamily === 'desktop') {
+      reasons.push(`device_gpu_mismatch:ios_desktop_gpu:${renderer}`);
     }
 
     // screen vs UA
@@ -206,7 +210,7 @@ Deno.serve(async (req) => {
     const dpr = Number(signals.devicePixelRatio || 0);
     if (isMobileUA) {
       if (ww && sw && (ww > sw * 1.5 || Math.abs(ww - sw) > 200)) reasons.push('emulator_screen_window_diff');
-      if (dpr && dpr < 1.5) reasons.push('mobile_low_dpr');
+      if (dpr && dpr < 1.0) reasons.push('mobile_low_dpr'); // < 1.0 only — budget Androids (DPR 1.3-1.4) are real devices
     }
 
     // timezone vs country
@@ -220,11 +224,13 @@ Deno.serve(async (req) => {
     else if (geo.country_code === 'PT' && !/^(Europe\/Lisbon|Atlantic\/Azores|Atlantic\/Madeira)$/.test(tz)) reasons.push(`timezone_country_mismatch_PT:${tz}`);
     else if (geo.country_code === 'BR' && !/^America\//.test(tz)) reasons.push(`timezone_country_mismatch_BR:${tz}`);
 
-    // language vs country — accept native language OR English (mobile in EN is common)
+    // language vs country — only check if we have language data (privacy browsers strip Accept-Language)
     const hasLang = (prefixes: string[]) => langs.some(l => prefixes.some(p => l.startsWith(p)));
-    if (geo.country_code === 'ES' && !hasLang(['es','ca','gl','eu','en'])) reasons.push('lang_country_mismatch:ES');
-    if (geo.country_code === 'PT' && !hasLang(['pt','en'])) reasons.push('lang_country_mismatch:PT');
-    if (geo.country_code === 'BR' && !hasLang(['pt','en'])) reasons.push('lang_country_mismatch:BR');
+    if (langs.length > 0) {
+      if (geo.country_code === 'ES' && !hasLang(['es','ca','gl','eu','en'])) reasons.push('lang_country_mismatch:ES');
+      if (geo.country_code === 'PT' && !hasLang(['pt','en'])) reasons.push('lang_country_mismatch:PT');
+      if (geo.country_code === 'BR' && !hasLang(['pt','en'])) reasons.push('lang_country_mismatch:BR');
+    }
 
     // iOS impossibles
     if (isIosUA && signals.batteryApi) reasons.push('ios_impossible_battery_api');

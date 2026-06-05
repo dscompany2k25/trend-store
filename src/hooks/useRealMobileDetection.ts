@@ -145,7 +145,8 @@ export function evaluateDetection(): DetectionResult {
     ['small_screen', s.screenWidth <= 500 && s.screenHeight <= 1000],
     ['screen_eq_window', Math.abs(s.screenWidth - s.windowInnerWidth) < 50],
     ['high_dpr', s.devicePixelRatio >= 1.5],
-    ['mobile_gpu', /adreno|mali|powervr|apple gpu|tegra/.test(renderer)],
+    // iOS Safari intentionally blocks WebGL GPU info — empty renderer on iOS counts as passed
+    ['mobile_gpu', /adreno|mali|powervr|apple gpu|tegra/.test(renderer) || (!renderer && /iphone|ipad|ipod/.test(ua))],
     ['notch', !!s.safeAreaInset],
     ['hover_none', !!s.hoverNone],
   ];
