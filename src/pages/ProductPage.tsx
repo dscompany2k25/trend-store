@@ -5,7 +5,7 @@ import { useTikTokPixel } from '@/hooks/useTikTokPixel';
 import { ArrowLeft, ShoppingCart, Truck, Shield, Star, Clock, CheckCircle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import ProductReviews from '@/components/store/ProductReviews';
+import ProductReviews, { getReviewStats } from '@/components/store/ProductReviews';
 import RelatedProducts from '@/components/store/RelatedProducts';
 import { toast } from '@/hooks/use-toast';
 import { formatPrice } from '@/lib/format';
@@ -170,7 +170,7 @@ export default function ProductPage() {
 
           <div className="flex items-center gap-1">
             {[1,2,3,4,5].map(s => <Star key={s} className="h-3.5 w-3.5 fill-warning text-warning" />)}
-            <span className="text-xs text-muted-foreground ml-1">4,8 (89 valoraciones)</span>
+            <span className="text-xs text-muted-foreground ml-1">4,8 ({getReviewStats(product.id).total.toLocaleString('es-ES')} valoraciones)</span>
           </div>
 
           <div className="flex items-baseline gap-2">

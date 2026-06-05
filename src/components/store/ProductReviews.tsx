@@ -4,24 +4,20 @@ interface ProductReviewsProps {
   productId: string;
 }
 
-function getReviewStats(id: string) {
+export function getReviewStats(id: string) {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = ((hash << 5) - hash) + id.charCodeAt(i);
     hash |= 0;
   }
   const base = Math.abs(hash);
-  const total = 50 + (base % 80);
+  const total = 900 + (base % 150); // 900–1049, sempre coerente por produto
+  const five = Math.round(total * (0.82 + (base % 7) * 0.01)); // 82–88%
+  const four = total - five;
   return {
     total,
     rating: 4.8,
-    distribution: [
-      Math.round(total * 0.78),
-      Math.round(total * 0.15),
-      Math.round(total * 0.05),
-      Math.round(total * 0.01),
-      Math.round(total * 0.01),
-    ],
+    distribution: [five, four, 0, 0, 0],
   };
 }
 
@@ -40,20 +36,22 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
               <Star key={s} className="h-3.5 w-3.5 fill-warning text-warning" />
             ))}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">{stats.total} valoraciones</p>
+          <p className="text-xs text-muted-foreground mt-1">{stats.total.toLocaleString('es-ES')} valoraciones</p>
         </div>
         <div className="flex-1 space-y-1.5">
           {[5, 4, 3, 2, 1].map((star, i) => (
-            <div key={star} className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground w-3">{star}</span>
-              <div className="flex-1 h-2.5 bg-secondary rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-warning rounded-full"
-                  style={{ width: `${percentages[i]}%` }}
-                />
+            percentages[i] > 0 ? (
+              <div key={star} className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-3">{star}</span>
+                <div className="flex-1 h-2.5 bg-secondary rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-warning rounded-full"
+                    style={{ width: `${percentages[i]}%` }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground w-8 text-right">{percentages[i]}%</span>
               </div>
-              <span className="text-xs text-muted-foreground w-8 text-right">{percentages[i]}%</span>
-            </div>
+            ) : null
           ))}
         </div>
       </div>
