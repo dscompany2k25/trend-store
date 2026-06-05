@@ -93,8 +93,6 @@ export default function CartPage() {
   const shipping = 0;
   const total = subtotal + shipping;
   const stepIndex = step === 'address' ? 1 : step === 'payment' ? 2 : 3;
-  // Payment is active once form is loaded — lock cart modifications at this point
-  const paymentLocked = !!clientSecret || creatingIntent;
 
   // ── Reset PI when cart total changes after pre-creation ───────────────────
   useEffect(() => {
@@ -434,11 +432,9 @@ export default function CartPage() {
               <p className="text-sm text-muted-foreground">{address.localidad}</p>
               <p className="text-sm text-muted-foreground">CP: {address.postalCode}</p>
             </div>
-            {!paymentLocked && (
-              <button onClick={handleChangeAddress} className="text-primary text-sm font-medium">
-                Cambiar
-              </button>
-            )}
+            <button onClick={handleChangeAddress} className="text-primary text-sm font-medium">
+              Cambiar
+            </button>
           </div>
         )}
 
@@ -453,31 +449,25 @@ export default function CartPage() {
                   <p className="text-xs text-muted-foreground mt-0.5">Variante: {item.variant.name}</p>
                 )}
                 <p className="text-price font-bold text-sm">{formatPrice(item.price)}</p>
-                {paymentLocked ? (
-                  <p className="text-xs text-muted-foreground mt-1">Cantidad: {item.quantity}</p>
-                ) : (
-                  <div className="flex items-center gap-2 mt-1">
-                    <button
-                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                      className="w-7 h-7 border rounded flex items-center justify-center"
-                    >
-                      <Minus className="h-3 w-3" />
-                    </button>
-                    <span className="text-sm font-medium w-6 text-center">{item.quantity}</span>
-                    <button
-                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                      className="w-7 h-7 border rounded flex items-center justify-center"
-                    >
-                      <Plus className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                    className="w-7 h-7 border rounded flex items-center justify-center"
+                  >
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <span className="text-sm font-medium w-6 text-center">{item.quantity}</span>
+                  <button
+                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                    className="w-7 h-7 border rounded flex items-center justify-center"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                </div>
               </div>
-              {!paymentLocked && (
-                <button onClick={() => removeItem(item.id)} className="text-muted-foreground hover:text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
+              <button onClick={() => removeItem(item.id)} className="text-muted-foreground hover:text-destructive">
+                <Trash2 className="h-4 w-4" />
+              </button>
             </div>
           ))}
         </div>
