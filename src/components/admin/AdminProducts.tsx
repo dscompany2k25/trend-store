@@ -8,12 +8,55 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Pencil, Trash2, Upload, X, Package, Image as ImageIcon } from 'lucide-react';
+import { Plus, Pencil, Trash2, Upload, X, Package, Image as ImageIcon, Copy, Check, Shield, ExternalLink } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function formatPrice(price: number) {
   return '€ ' + price.toFixed(2).replace('.', ',');
+}
+
+function getProductLinks(productId: string) {
+  const base = window.location.origin;
+  return {
+    cloaker: `${base}/blog?p=${productId}`,
+    direct: `${base}/producto/${productId}`,
+  };
+}
+
+function CopyLinkBtn({ url, label, icon }: { url: string; label: string; icon: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback for older browsers
+      const el = document.createElement('textarea');
+      el.value = url;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      title={url}
+      className={`flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-all ${
+        copied
+          ? 'bg-success/10 text-success border-success/30'
+          : 'bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground border-transparent'
+      }`}
+    >
+      {copied ? <Check className="h-3 w-3" /> : icon}
+      {copied ? '¡Copiado!' : label}
+    </button>
+  );
 }
 
 interface VariantForm {
@@ -285,8 +328,21 @@ export default function AdminProducts() {
                     {p.status === 'active' ? 'Activo' : 'Inactivo'}
                   </span>
                 </div>
+                {/* Links para anúncios */}
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <CopyLinkBtn
+                    url={getProductLinks(p.id).cloaker}
+                    label="Link Cloaker"
+                    icon={<Shield className="h-3 w-3" />}
+                  />
+                  <CopyLinkBtn
+                    url={getProductLinks(p.id).direct}
+                    label="Link Directo"
+                    icon={<ExternalLink className="h-3 w-3" />}
+                  />
+                </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-col items-center gap-1 shrink-0">
                 <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -458,6 +514,47 @@ export default function AdminProducts() {
                       <span className="text-sm truncate">{p.name}</span>
                     </label>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Links de anúncio — só aparece ao editar um produto existente */}
+            {editingId && (
+              <div className="border rounded-xl p-4 space-y-3">
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  <Copy className="h-4 w-4" /> Links para anúncios
+                </p>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                      <Shield className="h-3 w-3" /> Link com Cloaker — usar nos anúncios TikTok
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs bg-secondary rounded-lg px-3 py-2 truncate font-mono">
+                        {getProductLinks(editingId).cloaker}
+                      </code>
+                      <CopyLinkBtn
+                        url={getProductLinks(editingId).cloaker}
+                        label="Copiar"
+                        icon={<Copy className="h-3 w-3" />}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                      <ExternalLink className="h-3 w-3" /> Link Directo — produto sem cloaker
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs bg-secondary rounded-lg px-3 py-2 truncate font-mono">
+                        {getProductLinks(editingId).direct}
+                      </code>
+                      <CopyLinkBtn
+                        url={getProductLinks(editingId).direct}
+                        label="Copiar"
+                        icon={<Copy className="h-3 w-3" />}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
