@@ -82,10 +82,72 @@ export default function CartPage() {
   });
 
   const intentRef = useRef(false);
+  const preOrderIdRef = useRef<string | null>(null);
+  const pendingAddrRef = useRef<Address | null>(null);
 
   const shipping = 0;
   const total = subtotal + shipping;
   const stepIndex = step === 'address' ? 1 : step === 'payment' ? 2 : 3;
+
+  // ── Pre-create order + PaymentIntent when address dialog opens ─────────────
+  useEffect(() => {
+    if (showAddressForm && items.length > 0) {
+      preCreatePaymentIntent();
+    }
+  }, [showAddressForm]);
+
+  const preCreatePaymentIntent = async () => {
+    if (intentRef.current || clientSecret) return;
+    intentRef.current = true;
+    try {
+      const { data: order, error } = await supabase.from('orders').insert({
+        customer_name: 'Pendiente',
+        customer_email: 'pendiente@pago.es',
+        customer_phone: '+34 000000000',
+        customer_nif: null,
+        shipping_address: {} as any,
+        items: items.map(i => ({ id: i.productId, name: i.name, price: i.price, quantity: i.quantity, image: i.image, variant: i.variant ?? null })) as any,
+        subtotal,
+        shipping_cost: shipping,
+        total,
+        status: 'draft',
+        payment_method: 'stripe',
+        payment_status: 'pending',
+      }).select().single();
+
+      if (error) throw error;
+      preOrderIdRef.current = order.id;
+      setCurrentOrderId(order.id);
+      savePendingOrder(order.id);
+
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/create-payment-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: order.id, amount: total }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error);
+      setClientSecret(result.client_secret);
+      setPublishableKey(result.publishable_key);
+
+      // Se o utilizador já guardou a morada enquanto isto corria, aplica agora
+      if (pendingAddrRef.current) {
+        const addr = pendingAddrRef.current;
+        pendingAddrRef.current = null;
+        supabase.from('orders').update({
+          customer_name: addr.name,
+          customer_email: addr.email,
+          customer_phone: addr.phone,
+          customer_nif: addr.nif || null,
+          shipping_address: addr as any,
+          status: 'awaiting_payment',
+        }).eq('id', order.id).then(() => {});
+      }
+    } catch {
+      intentRef.current = false;
+    }
+  };
 
   // ── Handle Stripe redirect return ──────────────────────────────────────────
   useEffect(() => {
@@ -182,7 +244,22 @@ export default function CartPage() {
       currency: 'EUR',
     });
 
-    setTimeout(() => { handleStartPayment(); }, 0);
+    if (preOrderIdRef.current) {
+      // Pré-criação iniciada — actualizar order com morada real
+      supabase.from('orders').update({
+        customer_name: address.name,
+        customer_email: address.email,
+        customer_phone: address.phone,
+        customer_nif: address.nif || null,
+        shipping_address: address as any,
+        status: 'awaiting_payment',
+      }).eq('id', preOrderIdRef.current).then(() => {});
+    } else {
+      // Pré-criação ainda em curso — guarda morada para aplicar quando terminar
+      pendingAddrRef.current = address;
+      // Se falhou completamente (intentRef ainda false), cria agora
+      if (!intentRef.current) setTimeout(() => { handleStartPayment(); }, 0);
+    }
   };
 
   const handleStartPayment = async () => {
