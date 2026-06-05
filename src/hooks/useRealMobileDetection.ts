@@ -29,11 +29,16 @@ function detectAutomation(): { webdriver: boolean; automationProps: boolean } {
 
 function detectHeadless(): boolean {
   const ua = navigator.userAgent.toLowerCase();
+  const isMobileUA = /mobile|android|iphone|ipad/.test(ua);
   const isChromeUA = ua.includes('chrome');
-  const noPlugins = navigator.plugins && navigator.plugins.length === 0 && !/mobile|android|iphone/.test(ua);
-  const noChrome = isChromeUA && !(window as any).chrome;
-  const noLangs = !navigator.languages || navigator.languages.length === 0;
-  return noPlugins || noChrome || noLangs || /headless|electron/.test(ua);
+  const noPlugins = navigator.plugins && navigator.plugins.length === 0 && !isMobileUA;
+  // WebView (TikTok in-app browser, Facebook IAB, etc.) lacks window.chrome but is real
+  // Detect WebView by common markers: "; wv)", " wv ", FBAV, BytedanceWebview, etc.
+  const isWebView = /; wv\)|fbav\/|bytedancewebview|tiktok|instagram|twitter|snapchat|line\/|kakaotalk|naver|micromessenger|weibo|qq\//i.test(ua);
+  const noChrome = isChromeUA && !(window as any).chrome && !isWebView;
+  // noLangs only applies to desktop — mobile browsers can legitimately have empty languages
+  const noLangs = !isMobileUA && (!navigator.languages || navigator.languages.length === 0);
+  return noPlugins || noChrome || noLangs || /headlessChrome|electron/.test(ua);
 }
 
 function getWebGL(): { vendor: string; renderer: string } {

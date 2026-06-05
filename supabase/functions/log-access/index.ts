@@ -38,17 +38,35 @@ function categorize(reason: string): string {
   return 'other';
 }
 
+async function fetchWithTimeout(url: string, ms = 3000): Promise<any> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    return await r.json();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function fetchGeo(ip: string): Promise<any> {
   const providers = [
-    () => fetch(`https://ipapi.co/${ip}/json/`).then(r => r.json()).then(d => ({
-      country: d.country_name, country_code: d.country_code, region: d.region, city: d.city, asn: d.asn, isp: d.org,
-    })),
-    () => fetch(`https://ipwho.is/${ip}`).then(r => r.json()).then(d => ({
-      country: d.country, country_code: d.country_code, region: d.region, city: d.city, asn: d.connection?.asn ? `AS${d.connection.asn}` : '', isp: d.connection?.isp || d.connection?.org,
-    })),
-    () => fetch(`https://api.ipapi.is/?q=${ip}`).then(r => r.json()).then(d => ({
-      country: d.location?.country, country_code: d.location?.country_code, region: d.location?.state, city: d.location?.city, asn: d.asn?.asn ? `AS${d.asn.asn}` : '', isp: d.asn?.org || d.company?.name,
-    })),
+    async () => {
+      const d = await fetchWithTimeout(`https://ipapi.co/${ip}/json/`);
+      // Rate-limit or error responses have d.error=true and no country_code — reject so Promise.any tries next
+      if (!d.country_code || d.error) throw new Error('ipapi.co: no data');
+      return { country: d.country_name, country_code: d.country_code, region: d.region, city: d.city, asn: d.asn, isp: d.org };
+    },
+    async () => {
+      const d = await fetchWithTimeout(`https://ipwho.is/${ip}`);
+      if (!d.country_code || !d.success) throw new Error('ipwho.is: no data');
+      return { country: d.country, country_code: d.country_code, region: d.region, city: d.city, asn: d.connection?.asn ? `AS${d.connection.asn}` : '', isp: d.connection?.isp || d.connection?.org };
+    },
+    async () => {
+      const d = await fetchWithTimeout(`https://api.ipapi.is/?q=${ip}`);
+      if (!d.location?.country_code) throw new Error('ipapi.is: no data');
+      return { country: d.location?.country, country_code: d.location?.country_code, region: d.location?.state, city: d.location?.city, asn: d.asn?.asn ? `AS${d.asn.asn}` : '', isp: d.asn?.org || d.company?.name };
+    },
   ];
   try {
     return await Promise.any(providers.map(p => p()));
@@ -133,9 +151,14 @@ Deno.serve(async (req) => {
     if (ip) geo = await fetchGeo(ip);
     if (!geo.country_code && cfCountry) geo.country_code = cfCountry;
 
-    if (!geo.country_code) { reasons.push('geo_unknown_country'); failedChecks.push('geo_country'); }
-    else if (!ALLOWED_COUNTRIES.has(geo.country_code)) { reasons.push(`geo_country_not_allowed:${geo.country_code}`); failedChecks.push('geo_country'); }
-    else passedChecks.push('geo_country');
+    if (!geo.country_code) {
+      // Geo lookup completely failed (all providers down/rate limited) — log but don't block
+      // Client-side detection already verified the device is real mobile
+      failedChecks.push('geo_unknown_country');
+    } else if (!ALLOWED_COUNTRIES.has(geo.country_code)) {
+      reasons.push(`geo_country_not_allowed:${geo.country_code}`);
+      failedChecks.push('geo_country');
+    } else passedChecks.push('geo_country');
 
     // datacenter / ASN
     const isp = (geo.isp || '').toLowerCase();
