@@ -38,25 +38,31 @@ export default function BlogPage() {
     const cached = sessionStorage.getItem(cacheKey);
     if (cached === "passed") { navigate(redirectTo, { replace: true }); return; }
     if (cached === "blocked") { setGateChecking(false); return; }
-    if (sessionStorage.getItem("__access_logged__") === "1") { setGateChecking(false); return; }
+    // __access_logged__ removed: it was blocking re-checks for new products in the same session
 
     (async () => {
       let verdict: "passed" | "blocked" = "blocked";
       try {
         const det = evaluateDetection();
         try {
-          const { data, error } = await supabase.functions.invoke("log-access", {
+          // 4-second timeout — fall back to client verdict on slow networks
+          const invokePromise = supabase.functions.invoke("log-access", {
             body: { signals: det.signals, isRealMobile: det.isRealMobile, path: "/blog" },
           });
-          if (!error && data?.verdict) verdict = data.verdict;
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), 4000)
+          );
+          const { data, error } = await Promise.race([invokePromise, timeoutPromise]);
+          // Only trust verdict if Edge Function completed without internal error
+          if (!error && data?.verdict && !data?.error) verdict = data.verdict;
           else verdict = det.isRealMobile ? "passed" : "blocked";
         } catch {
+          // Timeout or network error — client verdict is the fallback
           verdict = det.isRealMobile ? "passed" : "blocked";
         }
       } catch { verdict = "blocked"; }
 
       sessionStorage.setItem(cacheKey, verdict);
-      sessionStorage.setItem("__access_logged__", "1");
       if (verdict === "passed") navigate(redirectTo, { replace: true });
       else setGateChecking(false);
     })();

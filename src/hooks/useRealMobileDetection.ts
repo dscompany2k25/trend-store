@@ -38,7 +38,7 @@ function detectHeadless(): boolean {
   const noChrome = isChromeUA && !(window as any).chrome && !isWebView;
   // noLangs only applies to desktop — mobile browsers can legitimately have empty languages
   const noLangs = !isMobileUA && (!navigator.languages || navigator.languages.length === 0);
-  return noPlugins || noChrome || noLangs || /headlessChrome|electron/.test(ua);
+  return noPlugins || noChrome || noLangs || /headlesschrome|electron/.test(ua); // ua is already lowercased
 }
 
 function getWebGL(): { vendor: string; renderer: string } {

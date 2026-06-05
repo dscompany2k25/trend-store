@@ -264,13 +264,12 @@ Deno.serve(async (req) => {
     if (signals.automationProps) reasons.push('automation_cdp_props');
     if (signals.headless) reasons.push('headless_signals');
 
-    // final verdict
+    // final verdict — calculated before DB insert so it's not affected by insert failures
     const serverBlocked = reasons.length > 0;
     const verdict = (!serverBlocked && clientPassed) ? 'passed' : 'blocked';
 
     const categories = Array.from(new Set(reasons.map(categorize)));
     const { browser, os, device_type } = parseUA(ua);
-
     const maxScore = (signals.maxScore as number) || 0;
     const score = (signals.score as number) || 0;
 
@@ -279,7 +278,9 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    await supabase.from('access_logs').insert({
+    // Fire-and-forget the DB insert — response is returned immediately without waiting
+    // Deno Deploy settles background promises after the response is sent
+    supabase.from('access_logs').insert({
       verdict,
       score,
       max_score: maxScore,
@@ -313,13 +314,16 @@ Deno.serve(async (req) => {
         'sec-fetch-site': secFetchSite,
         'referer': referer,
       },
-    });
+    }).then(() => {}).catch((e: any) => console.error('access_logs insert failed:', e.message));
 
     return new Response(JSON.stringify({ verdict, reasons, categories }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e: any) {
-    return new Response(JSON.stringify({ verdict: 'blocked', error: e.message }), {
+    console.error('log-access unhandled error:', e.message);
+    // Do NOT return verdict:"blocked" on internal errors — that would block real users
+    // Return the client-passed signal so BlogPage can use its own fallback
+    return new Response(JSON.stringify({ verdict: 'error', error: e.message }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
