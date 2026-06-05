@@ -195,6 +195,21 @@ Deno.serve(async (req) => {
       if (isAndroidUA && secChUaPlatform.toLowerCase() !== 'android') reasons.push(`ch_ua_platform_mismatch:${secChUaPlatform}`);
     }
 
+    // UA-Data mobile vs UA string mismatch — real Android devices always report uaDataMobile=true.
+    // uaDataMobile===false means navigator.userAgentData EXISTS but says desktop, contradicting the UA.
+    // This is the signature of a desktop browser (or headless bot) faking an Android UA.
+    if (isAndroidUA && signals.uaDataMobile === false) {
+      reasons.push('ua_data_mobile_mismatch:android_claims_desktop');
+    }
+
+    // Chrome 89+ on Android always sends sec-ch-ua-mobile as a low-entropy hint (no permission needed).
+    // An empty value while claiming Chrome on Android means the UA is faked.
+    const chromeVersionMatch = uaLower.match(/chrome\/(\d+)/);
+    const chromeVersion = chromeVersionMatch ? parseInt(chromeVersionMatch[1]) : 0;
+    if (isAndroidUA && chromeVersion >= 89 && !secChUaMobile && !isIosUA) {
+      reasons.push('sec_ch_ua_mobile_missing_android_chrome');
+    }
+
     // navigator.platform vs UA
     const navPlatform = (signals.platform || '').toLowerCase();
     if (isIosUA && navPlatform && !/iphone|ipad|ipod|mac/.test(navPlatform)) reasons.push(`platform_mismatch_ios:${navPlatform}`);

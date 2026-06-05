@@ -126,7 +126,14 @@ export function evaluateDetection(): DetectionResult {
     ['touch_screen', s.touchEvent || s.maxTouchPoints > 0],
     // iPadOS 13+ uses a Mac-like UA by default — detect via maxTouchPoints > 1 as fallback
     // Exclude Windows touchscreens (Surface Pro etc.) with the windows UA check
-    ['ua_mobile', /mobile|android|iphone|ipad|ipod/.test(ua) || s.uaDataMobile === true || (s.maxTouchPoints > 1 && !/windows/.test(ua))],
+    // uaDataMobile===false on Android UA = desktop env faking mobile UA (bot signal)
+    ['ua_mobile', (() => {
+      const byUA = /mobile|android|iphone|ipad|ipod/.test(ua);
+      const byData = s.uaDataMobile === true;
+      const byTouch = s.maxTouchPoints > 1 && !/windows/.test(ua);
+      const uaDataContradicts = /android/.test(ua) && s.uaDataMobile === false;
+      return (byUA || byData || byTouch) && !uaDataContradicts;
+    })()],
     ['not_emulator', !s.emulatorMatch],
     ['not_automated', !s.webdriver && !s.automationProps && !s.navigatorSpoofed && !s.headless],
     ['tz_lang_coherent', tzLangCoherent(s.timezone, s.languages)],
@@ -192,7 +199,13 @@ function tzLangCoherent(tz: string, languages: string[]): boolean {
   const isES = langs.some(l => l.startsWith('es') || l.startsWith('ca') || l.startsWith('gl') || l.startsWith('eu'));
   const isPT_PT = langs.some(l => l === 'pt-pt' || l === 'pt' || l.startsWith('pt-pt'));
   const isPT_BR = langs.some(l => l === 'pt-br' || l.startsWith('pt-br'));
-  const isEN = langs.some(l => l === 'en' || l.startsWith('en-') || l.startsWith('en'));
+  // isEN: only count as English if at least one lang is en-GB, en-US, etc. — plain 'en' without region
+  // is fine as a secondary language but not as a primary (bots set accept-language to 'es' in HTTP
+  // headers but navigator.languages stays ["en-US","en"])
+  const isEN = langs.some(l => l === 'en' || l.startsWith('en-'));
+  // Detect bot pattern: ONLY English languages on an Iberian timezone — real ES/PT users have at
+  // least one Iberian language in navigator.languages even if they also use English
+  const onlyEN = isEN && !isES && !isPT_PT && !isPT_BR && !langs.some(l => l.startsWith('pt'));
   const tzES = /^(Europe\/Madrid|Atlantic\/Canary|Africa\/Ceuta)$/.test(tz);
   const tzPT = /^(Europe\/Lisbon|Atlantic\/Azores|Atlantic\/Madeira)$/.test(tz);
   const tzBR = /^America\//.test(tz);
@@ -203,7 +216,8 @@ function tzLangCoherent(tz: string, languages: string[]): boolean {
   if (isPT_BR && tzBR) return true;
   // pt without region — accept Europe/Lisbon or America/*
   if (langs.some(l => l.startsWith('pt')) && (tzPT || tzBR)) return true;
-  // English is a neutral/wildcard language inside the allowed TZ set
-  if (isEN && tzAllowed) return true;
+  // English accepted ONLY if NOT the sole language group — an expat in Spain has en+es, not en-only
+  // Bots typically have en-US/en alone while setting a Spanish timezone to spoof geo checks
+  if (isEN && !onlyEN && tzAllowed) return true;
   return false;
 }
