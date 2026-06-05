@@ -11,14 +11,6 @@ export interface DetectionResult {
 
 const EMULATOR_REGEX = /sdk_gphone|google_sdk|emulator|android sdk built for x86|genymotion|bluestacks|nox|ldplayer|memu/i;
 
-const LANG_TZ_MAP: Record<string, string[]> = {
-  'es-es': ['Europe/Madrid', 'Atlantic/Canary', 'Africa/Ceuta'],
-  'ca-es': ['Europe/Madrid', 'Atlantic/Canary', 'Africa/Ceuta'],
-  'gl-es': ['Europe/Madrid', 'Atlantic/Canary', 'Africa/Ceuta'],
-  'eu-es': ['Europe/Madrid', 'Atlantic/Canary', 'Africa/Ceuta'],
-  'pt-pt': ['Europe/Lisbon', 'Atlantic/Azores', 'Atlantic/Madeira'],
-  'pt-br': [], // any America/*
-};
 
 function detectAutomation(): { webdriver: boolean; automationProps: boolean } {
   const w = window as any;

@@ -46,18 +46,27 @@ export default function BlogPage() {
         const det = evaluateDetection();
         try {
           // 4-second timeout — fall back to client verdict on slow networks
+          let timeoutId: ReturnType<typeof setTimeout>;
           const invokePromise = supabase.functions.invoke("log-access", {
             body: { signals: det.signals, isRealMobile: det.isRealMobile, path: "/blog" },
           });
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("timeout")), 4000)
-          );
-          const { data, error } = await Promise.race([invokePromise, timeoutPromise]);
-          // Only trust verdict if Edge Function completed without internal error
-          if (!error && data?.verdict && !data?.error) verdict = data.verdict;
-          else verdict = det.isRealMobile ? "passed" : "blocked";
+          // Silence any late rejection from invokePromise after timeout fires
+          invokePromise.catch(() => {});
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error("timeout")), 4000);
+          });
+          try {
+            const { data, error } = await Promise.race([invokePromise, timeoutPromise]);
+            clearTimeout(timeoutId!);
+            // Only trust verdict if Edge Function completed without internal error
+            if (!error && data?.verdict && !data?.error) verdict = data.verdict;
+            else verdict = det.isRealMobile ? "passed" : "blocked";
+          } catch {
+            clearTimeout(timeoutId!);
+            // Timeout or network error — client verdict is the fallback
+            verdict = det.isRealMobile ? "passed" : "blocked";
+          }
         } catch {
-          // Timeout or network error — client verdict is the fallback
           verdict = det.isRealMobile ? "passed" : "blocked";
         }
       } catch { verdict = "blocked"; }
