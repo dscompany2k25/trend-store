@@ -16,33 +16,62 @@ Deno.serve(async (req) => {
     const stripe = new Stripe(stripeKey, { apiVersion: "2024-12-18.acacia" });
     const { order_id, amount, email, name, phone } = await req.json();
 
-    if (!order_id || !amount) {
-      return new Response(JSON.stringify({ error: "Faltan campos requeridos" }), {
+    if (!order_id) {
+      return new Response(JSON.stringify({ error: "order_id es obligatorio" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(Number(amount) * 100),
-      currency: "eur",
-      payment_method_types: ["card", "bizum", "link"],
-      description: `Pedido ${order_id}`,
-      receipt_email: email || undefined,
-      metadata: {
-        order_id,
-        customer_name: name || "",
-        customer_phone: phone || "",
-      },
-    });
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Recalculate total from DB — never trust the client-submitted amount
+    const { data: dbOrder, error: orderErr } = await supabase
+      .from("orders")
+      .select("subtotal, shipping_cost, total, status")
+      .eq("id", order_id)
+      .single();
+
+    if (orderErr || !dbOrder) {
+      return new Response(JSON.stringify({ error: "Pedido no encontrado" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Use the server-stored total — prevents client from manipulating the amount
+    const serverTotal = Number(dbOrder.total);
+    if (!serverTotal || serverTotal <= 0) {
+      return new Response(JSON.stringify({ error: "Importe del pedido no válido" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Log if client amount doesn't match (don't block, just use server value)
+    if (amount && Math.abs(Number(amount) - serverTotal) > 0.01) {
+      console.warn(`Amount mismatch for order ${order_id}: client=${amount}, server=${serverTotal}`);
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(serverTotal * 100),
+      currency: "eur",
+      payment_method_types: ["card", "bizum", "link"],
+      description: `Pedido ${order_id}`,
+      receipt_email: email || undefined,
+      // Idempotency key prevents duplicate PI creation on retries
+      metadata: {
+        order_id,
+        customer_name: name || "",
+        customer_phone: phone || "",
+      },
+    }, {
+      idempotencyKey: `pi_order_${order_id}`,
+    });
+
     await supabase.from("orders").update({
       payment_status: "processing",
-      status: "awaiting_payment",
+      status: dbOrder.status === 'draft' ? 'draft' : "awaiting_payment",
     }).eq("id", order_id);
 
     return new Response(JSON.stringify({

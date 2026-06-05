@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Header from '@/components/store/Header';
 import BottomNav from '@/components/store/BottomNav';
 import StoreProfile from '@/components/store/StoreProfile';
@@ -13,8 +13,9 @@ export default function Index() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('home');
 
-  const filtered = products?.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase())
+  const filtered = useMemo(() =>
+    products?.filter(p => p.name.toLowerCase().includes(search.toLowerCase())),
+    [products, search]
   );
 
   const featured = filtered?.slice(0, 3);

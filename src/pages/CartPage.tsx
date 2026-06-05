@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Lock, Minus, Plus, Trash2, CreditCard } from 'lucide-react';
 import { useCart } from '@/hooks/useCart';
@@ -58,6 +58,8 @@ function clearPendingOrder() {
   try { sessionStorage.removeItem(ORDER_KEY); } catch {}
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function CartPage() {
   const { items, updateQuantity, removeItem, subtotal, clearCart } = useCart();
   const navigate = useNavigate();
@@ -81,13 +83,43 @@ export default function CartPage() {
     provincia: '', ciudad: '', localidad: '', calle: '', numero: '', piso: '',
   });
 
-  const intentRef = useRef(false);
+  const intentRef    = useRef(false);
   const preOrderIdRef = useRef<string | null>(null);
   const pendingAddrRef = useRef<Address | null>(null);
+  const prevTotalRef  = useRef<number | null>(null);
+  // Stable "persons buying" count — doesn't regenerate on each render
+  const personsCount = useRef(Math.floor(Math.random() * 8) + 3);
 
   const shipping = 0;
   const total = subtotal + shipping;
   const stepIndex = step === 'address' ? 1 : step === 'payment' ? 2 : 3;
+  // Payment is active once form is loaded — lock cart modifications at this point
+  const paymentLocked = !!clientSecret || creatingIntent;
+
+  // ── Reset PI when cart total changes after pre-creation ───────────────────
+  useEffect(() => {
+    if (prevTotalRef.current === null) {
+      prevTotalRef.current = total;
+      return;
+    }
+    if (prevTotalRef.current === total) return;
+    prevTotalRef.current = total;
+
+    if (preOrderIdRef.current) {
+      // Mark stale draft order as cancelled
+      supabase.from('orders')
+        .update({ status: 'cancelled' })
+        .eq('id', preOrderIdRef.current)
+        .then(() => {});
+      preOrderIdRef.current = null;
+    }
+    pendingAddrRef.current = null;
+    setCurrentOrderId(null);
+    setClientSecret(null);
+    setPublishableKey('');
+    clearPendingOrder();
+    intentRef.current = false;
+  }, [total]);
 
   // ── Pre-create order + PaymentIntent when address dialog opens ─────────────
   useEffect(() => {
@@ -131,7 +163,7 @@ export default function CartPage() {
       setClientSecret(result.client_secret);
       setPublishableKey(result.publishable_key);
 
-      // Se o utilizador já guardou a morada enquanto isto corria, aplica agora
+      // Apply pending address if user already saved it while this was loading
       if (pendingAddrRef.current) {
         const addr = pendingAddrRef.current;
         pendingAddrRef.current = null;
@@ -142,14 +174,17 @@ export default function CartPage() {
           customer_nif: addr.nif || null,
           shipping_address: addr as any,
           status: 'awaiting_payment',
-        }).eq('id', order.id).then(() => {});
+        }).eq('id', order.id).then(({ error: e }) => {
+          if (e) console.error('Failed to update order address:', e);
+        });
       }
     } catch {
       intentRef.current = false;
+      preOrderIdRef.current = null;
     }
   };
 
-  // ── Handle Stripe redirect return ──────────────────────────────────────────
+  // ── Handle Stripe redirect return (timeout after 30s) ─────────────────────
   useEffect(() => {
     const piId = searchParams.get('payment_intent');
     const status = searchParams.get('redirect_status');
@@ -158,6 +193,12 @@ export default function CartPage() {
     setVerifyingReturn(true);
     const pending = loadPendingOrder();
     const orderId = pending?.orderId ?? null;
+
+    const timer = setTimeout(() => {
+      toast({ title: 'Verificación tardando demasiado. Si ya pagaste, contacta soporte.', variant: 'destructive' });
+      setVerifyingReturn(false);
+      navigate('/carrito', { replace: true });
+    }, 30000);
 
     const verify = async () => {
       try {
@@ -168,29 +209,51 @@ export default function CartPage() {
           body: JSON.stringify({ payment_intent_id: piId, order_id: orderId }),
         });
         const data = await res.json();
+        clearTimeout(timer);
         if (data.paid) {
           clearCart();
           clearPendingOrder();
           navigate(`/gracias/${data.order_id || orderId}`, { replace: true });
           return;
         }
-      } catch {}
-
-      if (status === 'succeeded') {
-        clearCart();
-        clearPendingOrder();
-        navigate(`/gracias/${orderId}`, { replace: true });
-        return;
+      } catch {
+        clearTimeout(timer);
+        if (status === 'succeeded') {
+          clearCart();
+          clearPendingOrder();
+          navigate(`/gracias/${orderId}`, { replace: true });
+          return;
+        }
       }
-
+      clearTimeout(timer);
       toast({ title: 'No se pudo confirmar el pago. Inténtalo de nuevo.', variant: 'destructive' });
       setVerifyingReturn(false);
-      // Clean URL params
       navigate('/carrito', { replace: true });
     };
 
     void verify();
+    return () => clearTimeout(timer);
   }, []);
+
+  // ── Change address — fully reset PI state ─────────────────────────────────
+  const handleChangeAddress = () => {
+    if (preOrderIdRef.current) {
+      supabase.from('orders')
+        .update({ status: 'cancelled' })
+        .eq('id', preOrderIdRef.current)
+        .then(() => {});
+      preOrderIdRef.current = null;
+    }
+    pendingAddrRef.current = null;
+    setAddressSaved(false);
+    setShowAddressForm(true);
+    setStep('address');
+    setClientSecret(null);
+    setPublishableKey('');
+    setCurrentOrderId(null);
+    clearPendingOrder();
+    intentRef.current = false;
+  };
 
   const bizumOverlay = showWaiting ? (
     <div className="fixed inset-0 z-[9999] bg-background overflow-y-auto">
@@ -228,11 +291,25 @@ export default function CartPage() {
     );
   }
 
+  // ── Validations ───────────────────────────────────────────────────────────
   const handleSaveAddress = () => {
-    if (!address.name || !address.phone || !address.email || !address.postalCode || !address.calle) {
-      toast({ title: 'Rellena los campos obligatorios', variant: 'destructive' });
-      return;
+    const phoneDigits = address.phone.replace(/\D/g, '');
+    if (!address.name.trim()) {
+      toast({ title: 'Introduce tu nombre completo', variant: 'destructive' }); return;
     }
+    if (phoneDigits.length < 9) {
+      toast({ title: 'El teléfono debe tener 9 dígitos', variant: 'destructive' }); return;
+    }
+    if (!EMAIL_RE.test(address.email)) {
+      toast({ title: 'El correo electrónico no es válido', variant: 'destructive' }); return;
+    }
+    if (address.postalCode.length !== 5) {
+      toast({ title: 'El código postal debe tener 5 dígitos', variant: 'destructive' }); return;
+    }
+    if (!address.calle.trim()) {
+      toast({ title: 'Introduce la calle o avenida', variant: 'destructive' }); return;
+    }
+
     saveAddress(address);
     setAddressSaved(true);
     setShowAddressForm(false);
@@ -245,7 +322,6 @@ export default function CartPage() {
     });
 
     if (preOrderIdRef.current) {
-      // Pré-criação iniciada — actualizar order com morada real
       supabase.from('orders').update({
         customer_name: address.name,
         customer_email: address.email,
@@ -253,11 +329,11 @@ export default function CartPage() {
         customer_nif: address.nif || null,
         shipping_address: address as any,
         status: 'awaiting_payment',
-      }).eq('id', preOrderIdRef.current).then(() => {});
+      }).eq('id', preOrderIdRef.current).then(({ error: e }) => {
+        if (e) console.error('Order address update failed:', e);
+      });
     } else {
-      // Pré-criação ainda em curso — guarda morada para aplicar quando terminar
       pendingAddrRef.current = address;
-      // Se falhou completamente (intentRef ainda false), cria agora
       if (!intentRef.current) setTimeout(() => { handleStartPayment(); }, 0);
     }
   };
@@ -283,6 +359,7 @@ export default function CartPage() {
       }).select().single();
 
       if (orderError) throw orderError;
+      preOrderIdRef.current = order.id;
       setCurrentOrderId(order.id);
       savePendingOrder(order.id);
 
@@ -290,13 +367,7 @@ export default function CartPage() {
       const response = await fetch(`https://${projectId}.supabase.co/functions/v1/create-payment-intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          order_id: order.id,
-          amount: total,
-          email: address.email,
-          name: address.name,
-          phone: address.phone,
-        }),
+        body: JSON.stringify({ order_id: order.id, amount: total, email: address.email, name: address.name, phone: address.phone }),
       });
 
       const result = await response.json();
@@ -307,6 +378,7 @@ export default function CartPage() {
     } catch (err: any) {
       toast({ title: err.message || 'Error al crear el pedido', variant: 'destructive' });
       setCurrentOrderId(null);
+      preOrderIdRef.current = null;
       clearPendingOrder();
       intentRef.current = false;
     }
@@ -362,15 +434,11 @@ export default function CartPage() {
               <p className="text-sm text-muted-foreground">{address.localidad}</p>
               <p className="text-sm text-muted-foreground">CP: {address.postalCode}</p>
             </div>
-            <button onClick={() => {
-              setAddressSaved(false);
-              setShowAddressForm(true);
-              setStep('address');
-              setClientSecret(null);
-              intentRef.current = false;
-            }} className="text-primary text-sm font-medium">
-              Cambiar
-            </button>
+            {!paymentLocked && (
+              <button onClick={handleChangeAddress} className="text-primary text-sm font-medium">
+                Cambiar
+              </button>
+            )}
           </div>
         )}
 
@@ -385,19 +453,31 @@ export default function CartPage() {
                   <p className="text-xs text-muted-foreground mt-0.5">Variante: {item.variant.name}</p>
                 )}
                 <p className="text-price font-bold text-sm">{formatPrice(item.price)}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="w-7 h-7 border rounded flex items-center justify-center">
-                    <Minus className="h-3 w-3" />
-                  </button>
-                  <span className="text-sm font-medium w-6 text-center">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="w-7 h-7 border rounded flex items-center justify-center">
-                    <Plus className="h-3 w-3" />
-                  </button>
-                </div>
+                {paymentLocked ? (
+                  <p className="text-xs text-muted-foreground mt-1">Cantidad: {item.quantity}</p>
+                ) : (
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                      className="w-7 h-7 border rounded flex items-center justify-center"
+                    >
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <span className="text-sm font-medium w-6 text-center">{item.quantity}</span>
+                    <button
+                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      className="w-7 h-7 border rounded flex items-center justify-center"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
               </div>
-              <button onClick={() => removeItem(item.id)} className="text-muted-foreground hover:text-destructive">
-                <Trash2 className="h-4 w-4" />
-              </button>
+              {!paymentLocked && (
+                <button onClick={() => removeItem(item.id)} className="text-muted-foreground hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -442,11 +522,7 @@ export default function CartPage() {
                     <p className="text-xs text-muted-foreground">Elige tu método preferido en el siguiente paso</p>
                   </div>
                 </div>
-                <Button
-                  onClick={handleStartPayment}
-                  disabled={creatingIntent}
-                  className="w-full h-11"
-                >
+                <Button onClick={handleStartPayment} disabled={creatingIntent} className="w-full h-11">
                   {creatingIntent ? 'Cargando...' : 'Continuar al pago'}
                 </Button>
               </div>
@@ -457,10 +533,7 @@ export default function CartPage() {
                   publishableKey={publishableKey}
                   total={total}
                   customerEmail={address.email}
-                  onProcessing={(piId) => {
-                    setPaymentIntentId(piId);
-                    setShowWaiting(true);
-                  }}
+                  onProcessing={(piId) => { setPaymentIntentId(piId); setShowWaiting(true); }}
                   onBizumSubmitting={() => setShowWaiting(true)}
                   onSucceeded={async (piId) => {
                     try {
@@ -483,7 +556,7 @@ export default function CartPage() {
         )}
 
         <div className="bg-secondary rounded-full py-2 text-center text-sm text-muted-foreground">
-          ● {Math.floor(Math.random() * 8) + 3} personas comprando ahora
+          ● {personsCount.current} personas comprando ahora
         </div>
       </div>
 
@@ -509,20 +582,20 @@ export default function CartPage() {
         </div>
       )}
 
-      <Dialog open={showAddressForm} onOpenChange={setShowAddressForm}>
+      <Dialog open={showAddressForm} onOpenChange={(open) => { if (!open) setShowAddressForm(false); }}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Añadir dirección de envío</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div><Label className="text-xs text-muted-foreground">Datos de contacto</Label></div>
-            <Input placeholder="Nombre completo" value={address.name} onChange={e => setAddress({...address, name: e.target.value})} />
+            <Input placeholder="Nombre completo *" value={address.name} onChange={e => setAddress({...address, name: e.target.value})} />
             <div className="flex items-center border rounded-md focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ring-offset-background overflow-hidden">
               <span className="px-3 h-10 flex items-center bg-secondary text-sm font-medium border-r shrink-0">+34</span>
               <input
                 type="tel"
                 inputMode="numeric"
-                placeholder="6XX XXX XXX"
+                placeholder="6XX XXX XXX *"
                 value={address.phone.replace(/^\+34\s*/, '')}
                 onChange={e => {
                   const digits = e.target.value.replace(/[^\d\s]/g, '');
@@ -531,16 +604,21 @@ export default function CartPage() {
                 className="flex-1 h-10 px-3 bg-background text-base md:text-sm placeholder:text-muted-foreground focus:outline-none"
               />
             </div>
-            <Input placeholder="Correo electrónico" type="email" value={address.email} onChange={e => setAddress({...address, email: e.target.value})} />
+            <Input placeholder="Correo electrónico *" type="email" value={address.email} onChange={e => setAddress({...address, email: e.target.value})} />
             <Input placeholder="DNI / NIE (opcional)" value={address.nif} onChange={e => setAddress({...address, nif: e.target.value})} />
             <div><Label className="text-xs text-muted-foreground mt-2">Dirección de envío</Label></div>
-            <Input placeholder="Código Postal (5 dígitos)" maxLength={5} value={address.postalCode} onChange={e => setAddress({...address, postalCode: e.target.value.replace(/\D/g, '')})} />
+            <Input
+              placeholder="Código Postal (5 dígitos) *"
+              maxLength={5}
+              value={address.postalCode}
+              onChange={e => setAddress({...address, postalCode: e.target.value.replace(/\D/g, '')})}
+            />
             <div className="grid grid-cols-2 gap-3">
               <Input placeholder="Provincia" value={address.provincia} onChange={e => setAddress({...address, provincia: e.target.value})} />
               <Input placeholder="Ciudad" value={address.ciudad} onChange={e => setAddress({...address, ciudad: e.target.value})} />
             </div>
             <Input placeholder="Localidad / Municipio" value={address.localidad} onChange={e => setAddress({...address, localidad: e.target.value})} />
-            <Input placeholder="Calle / Avenida" value={address.calle} onChange={e => setAddress({...address, calle: e.target.value})} />
+            <Input placeholder="Calle / Avenida *" value={address.calle} onChange={e => setAddress({...address, calle: e.target.value})} />
             <div className="grid grid-cols-2 gap-3">
               <Input placeholder="Número" value={address.numero} onChange={e => setAddress({...address, numero: e.target.value})} />
               <Input placeholder="Piso / Puerta (opcional)" value={address.piso} onChange={e => setAddress({...address, piso: e.target.value})} />

@@ -44,22 +44,27 @@ export default function BizumWaiting({ total, phone, onBack, orderSummary, order
   useEffect(() => {
     if (!orderId) return;
     let cancelled = false;
+    let retries = 0;
+    const MAX_RETRIES = 100; // ~5 min at 3s intervals
 
     const poll = setInterval(async () => {
       if (cancelled || expiredRef.current) {
         clearInterval(poll);
         return;
       }
+      retries++;
+      if (retries > MAX_RETRIES) {
+        clearInterval(poll);
+        return;
+      }
       try {
         if (paymentIntentId) {
-          try {
-            const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-            await fetch(`https://${projectId}.supabase.co/functions/v1/verify-payment`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ payment_intent_id: paymentIntentId, order_id: orderId }),
-            });
-          } catch {}
+          const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+          await fetch(`https://${projectId}.supabase.co/functions/v1/verify-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ payment_intent_id: paymentIntentId, order_id: orderId }),
+          }).catch(() => {});
         }
         const { data } = await (await import('@/integrations/supabase/client')).supabase
           .from('orders').select('payment_status, status').eq('id', orderId).single();
@@ -67,7 +72,9 @@ export default function BizumWaiting({ total, phone, onBack, orderSummary, order
           clearInterval(poll);
           onPaymentSuccess?.();
         }
-      } catch {}
+      } catch (e) {
+        console.error('BizumWaiting poll error:', e);
+      }
     }, 3000);
 
     return () => { cancelled = true; clearInterval(poll); };
