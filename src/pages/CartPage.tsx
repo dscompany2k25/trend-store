@@ -87,8 +87,24 @@ export default function CartPage() {
   const preOrderIdRef = useRef<string | null>(null);
   const pendingAddrRef = useRef<Address | null>(null);
   const prevTotalRef  = useRef<number | null>(null);
-  // Stable "persons buying" count — doesn't regenerate on each render
-  const personsCount = useRef(Math.floor(Math.random() * 8) + 3);
+  // Urgency: shown only after JS hydration, not on initial server-like render
+  const [showUrgency, setShowUrgency] = useState(false);
+  const [personsCount, setPersonsCount] = useState(0);
+  useEffect(() => {
+    const base = Math.floor(Math.random() * 18) + 9; // 9-26
+    const t = setTimeout(() => {
+      setShowUrgency(true);
+      setPersonsCount(base);
+    }, 2800);
+    // Drift the counter slowly — ±1 every 55-110s
+    const drift = setInterval(() => {
+      setPersonsCount(prev => {
+        const delta = Math.random() > 0.52 ? 1 : -1;
+        return Math.max(4, Math.min(35, prev + delta));
+      });
+    }, Math.floor(Math.random() * 55000) + 55000);
+    return () => { clearTimeout(t); clearInterval(drift); };
+  }, []);
 
   const shipping = 0;
   const total = subtotal + shipping;
@@ -385,9 +401,11 @@ export default function CartPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="bg-primary text-primary-foreground text-center text-sm py-2 font-medium">
-        ● Últimas unidades · Stock limitado
-      </div>
+      {showUrgency && (
+        <div className="bg-primary text-primary-foreground text-center text-sm py-2 font-medium">
+          ● Pocas unidades disponibles · Reserva el tuyo ahora
+        </div>
+      )}
 
       <header className="flex items-center gap-3 p-4 border-b">
         <button onClick={() => navigate(-1)}><ArrowLeft className="h-5 w-5" /></button>
@@ -545,9 +563,11 @@ export default function CartPage() {
           </div>
         )}
 
-        <div className="bg-secondary rounded-full py-2 text-center text-sm text-muted-foreground">
-          ● {personsCount.current} personas comprando ahora
-        </div>
+        {showUrgency && personsCount > 0 && (
+          <div className="bg-secondary rounded-full py-2 text-center text-sm text-muted-foreground">
+            ● {personsCount} personas están viendo este producto
+          </div>
+        )}
       </div>
 
       {!clientSecret && (

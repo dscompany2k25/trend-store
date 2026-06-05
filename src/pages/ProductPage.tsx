@@ -10,20 +10,29 @@ import RelatedProducts from '@/components/store/RelatedProducts';
 import { toast } from '@/hooks/use-toast';
 import { formatPrice } from '@/lib/format';
 
-function OfferCountdown() {
+function OfferCountdown({ productId }: { productId: string }) {
   const [timeLeft, setTimeLeft] = useState(() => {
-    const now = new Date();
-    const end = new Date(now);
-    end.setHours(23, 59, 59, 999);
-    return Math.floor((end.getTime() - now.getTime()) / 1000);
+    const key = `_oe_${productId}`;
+    const stored = sessionStorage.getItem(key);
+    if (stored) {
+      const remaining = Math.floor((parseInt(stored) - Date.now()) / 1000);
+      return remaining > 0 ? remaining : 0;
+    }
+    // Duração aleatória entre 52 e 118 minutos — diferente por sessão
+    const duration = (Math.floor(Math.random() * 66) + 52) * 60;
+    sessionStorage.setItem(key, String(Date.now() + duration * 1000));
+    return duration;
   });
 
   useEffect(() => {
+    if (timeLeft <= 0) return;
     const interval = setInterval(() => {
-      setTimeLeft(prev => (prev > 0 ? prev - 1 : 0));
+      setTimeLeft(prev => (prev > 1 ? prev - 1 : 0));
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  if (timeLeft <= 0) return null;
 
   const h = String(Math.floor(timeLeft / 3600)).padStart(2, '0');
   const m = String(Math.floor((timeLeft % 3600) / 60)).padStart(2, '0');
@@ -220,10 +229,10 @@ export default function ProductPage() {
               <CheckCircle className="h-4 w-4 text-success" />
               <span>Envío gratis a toda España</span>
             </div>
-            <p className="text-xs text-muted-foreground ml-6">Entrega en 5-10 días laborables</p>
+            <p className="text-xs text-muted-foreground ml-6">Entrega en 3 a 5 días laborables</p>
           </div>
 
-          {hasDiscount && <OfferCountdown />}
+          {hasDiscount && <OfferCountdown productId={product.id} />}
 
           <div className="flex items-center justify-between py-4 border-t border-b">
             <div className="flex flex-col items-center gap-1.5 flex-1">
@@ -253,7 +262,7 @@ export default function ProductPage() {
             </div>
           )}
 
-          <ProductReviews productId={product.id} />
+          <ProductReviews productId={product.id} productName={product.name} />
           <RelatedProducts productId={product.id} />
         </div>
       </div>

@@ -13,6 +13,10 @@ import AdminPage from "./pages/AdminPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import BlogPage from "./pages/BlogPage.tsx";
 import BlogPostPage from "./pages/BlogPostPage.tsx";
+import PrivacyPage from "./pages/PrivacyPage.tsx";
+import TermsPage from "./pages/TermsPage.tsx";
+import ReturnsPage from "./pages/ReturnsPage.tsx";
+import ContactPage from "./pages/ContactPage.tsx";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +41,10 @@ const App = () => (
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/blog" element={<BlogPage />} />
               <Route path="/blog/:slug" element={<BlogPostPage />} />
+              <Route path="/privacidad" element={<PrivacyPage />} />
+              <Route path="/terminos" element={<TermsPage />} />
+              <Route path="/devoluciones" element={<ReturnsPage />} />
+              <Route path="/contacto" element={<ContactPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

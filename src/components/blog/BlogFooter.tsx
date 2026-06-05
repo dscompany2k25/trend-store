@@ -109,12 +109,12 @@ export default function BlogFooter() {
         </div>
 
         <div>
-          <p className="text-xs uppercase tracking-[0.25em] text-background/40 mb-4">Informações</p>
+          <p className="text-xs uppercase tracking-[0.25em] text-background/40 mb-4">Legal</p>
           <ul className="space-y-2 text-sm">
-            <li><a href="#" className="text-background/80 hover:text-primary transition-colors">Sobre nós</a></li>
-            <li><a href="#" className="text-background/80 hover:text-primary transition-colors">Contactos</a></li>
-            <li><a href="#" className="text-background/80 hover:text-primary transition-colors">Política de privacidade</a></li>
-            <li><a href="#" className="text-background/80 hover:text-primary transition-colors">Termos e condições</a></li>
+            <li><Link to="/contacto" className="text-background/80 hover:text-primary transition-colors">Contacto</Link></li>
+            <li><Link to="/privacidad" className="text-background/80 hover:text-primary transition-colors">Política de Privacidad</Link></li>
+            <li><Link to="/terminos" className="text-background/80 hover:text-primary transition-colors">Términos y Condiciones</Link></li>
+            <li><Link to="/devoluciones" className="text-background/80 hover:text-primary transition-colors">Devoluciones</Link></li>
           </ul>
         </div>
       </div>
