@@ -40,18 +40,16 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
         </div>
         <div className="flex-1 space-y-1.5">
           {[5, 4, 3, 2, 1].map((star, i) => (
-            percentages[i] > 0 ? (
-              <div key={star} className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground w-3">{star}</span>
-                <div className="flex-1 h-2.5 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-warning rounded-full"
-                    style={{ width: `${percentages[i]}%` }}
-                  />
-                </div>
-                <span className="text-xs text-muted-foreground w-8 text-right">{percentages[i]}%</span>
+            <div key={star} className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground w-3">{star}</span>
+              <div className="flex-1 h-2.5 bg-secondary rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-warning rounded-full"
+                  style={{ width: `${percentages[i]}%` }}
+                />
               </div>
-            ) : null
+              <span className="text-xs text-muted-foreground w-8 text-right">{percentages[i]}%</span>
+            </div>
           ))}
         </div>
       </div>
