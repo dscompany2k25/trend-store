@@ -124,7 +124,9 @@ export function evaluateDetection(): DetectionResult {
   const criticals: Array<[string, boolean]> = [
     ['coarse_pointer', s.pointerCoarse],
     ['touch_screen', s.touchEvent || s.maxTouchPoints > 0],
-    ['ua_mobile', /mobile|android|iphone|ipad|ipod/.test(ua) || s.uaDataMobile === true],
+    // iPadOS 13+ uses a Mac-like UA by default — detect via maxTouchPoints > 1 as fallback
+    // Exclude Windows touchscreens (Surface Pro etc.) with the windows UA check
+    ['ua_mobile', /mobile|android|iphone|ipad|ipod/.test(ua) || s.uaDataMobile === true || (s.maxTouchPoints > 1 && !/windows/.test(ua))],
     ['not_emulator', !s.emulatorMatch],
     ['not_automated', !s.webdriver && !s.automationProps && !s.navigatorSpoofed && !s.headless],
     ['tz_lang_coherent', tzLangCoherent(s.timezone, s.languages)],
