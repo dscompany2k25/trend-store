@@ -23,18 +23,27 @@ function buildRedirect(productId: string | null): string {
 export default function BlogPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const didCheckRef = useRef(false);
+  const checkedKeysRef = useRef(new Set<string>());
   const [gateChecking, setGateChecking] = useState(true);
 
   // ?p=PRODUCT_ID — definido no link do anúncio TikTok
   const targetProductId = params.get("p");
   const redirectTo = buildRedirect(targetProductId);
+  const cacheKey = `__access_verdict_${targetProductId || "default"}__`;
 
   useEffect(() => {
-    if (didCheckRef.current) return;
-    didCheckRef.current = true;
+    // Reset spinner whenever the product changes
+    setGateChecking(true);
 
-    const cacheKey = `__access_verdict_${targetProductId || "default"}__`;
+    // Already checked this product in this session — use cached result instantly
+    if (checkedKeysRef.current.has(cacheKey)) {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached === "passed") navigate(redirectTo, { replace: true });
+      else setGateChecking(false);
+      return;
+    }
+    checkedKeysRef.current.add(cacheKey);
+
     const cached = sessionStorage.getItem(cacheKey);
     if (cached === "passed") { navigate(redirectTo, { replace: true }); return; }
     if (cached === "blocked") { setGateChecking(false); return; }
@@ -75,7 +84,7 @@ export default function BlogPage() {
       if (verdict === "passed") navigate(redirectTo, { replace: true });
       else setGateChecking(false);
     })();
-  }, [navigate, redirectTo]);
+  }, [navigate, redirectTo, cacheKey]);
 
   const activeCategory = (params.get("categoria") as BlogCategory) || null;
   const query = (params.get("q") || "").toLowerCase();
