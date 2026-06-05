@@ -8,18 +8,35 @@ import { blogPosts, categories, formatDatePT, type BlogCategory } from "@/data/b
 import { evaluateDetection } from "@/hooks/useRealMobileDetection";
 import { supabase } from "@/integrations/supabase/client";
 
+// URL do produto de destino lida do parâmetro ?p= no link do anúncio TikTok.
+// Exemplo de uso: https://seusite.com/blog?p=ID_DO_PRODUTO
+// Se não houver ?p=, redireciona para a homepage (lista de produtos).
+const FALLBACK_REDIRECT = "/";
+
+function buildRedirect(productId: string | null): string {
+  if (productId && /^[a-f0-9-]{36}$/i.test(productId)) {
+    return `/producto/${productId}`;
+  }
+  return FALLBACK_REDIRECT;
+}
+
 export default function BlogPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const didCheckRef = useRef(false);
   const [gateChecking, setGateChecking] = useState(true);
 
+  // ?p=PRODUCT_ID — definido no link do anúncio TikTok
+  const targetProductId = params.get("p");
+  const redirectTo = buildRedirect(targetProductId);
+
   useEffect(() => {
     if (didCheckRef.current) return;
     didCheckRef.current = true;
 
-    const cached = sessionStorage.getItem("__access_verdict__");
-    if (cached === "passed") { navigate("/producto/1696590b-5c74-4e69-89a3-a652326db5ee", { replace: true }); return; }
+    const cacheKey = `__access_verdict_${targetProductId || "default"}__`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached === "passed") { navigate(redirectTo, { replace: true }); return; }
     if (cached === "blocked") { setGateChecking(false); return; }
     if (sessionStorage.getItem("__access_logged__") === "1") { setGateChecking(false); return; }
 
@@ -27,27 +44,23 @@ export default function BlogPage() {
       let verdict: "passed" | "blocked" = "blocked";
       try {
         const det = evaluateDetection();
-        const controller = new AbortController();
-        const t = setTimeout(() => controller.abort(), 2500);
         try {
           const { data, error } = await supabase.functions.invoke("log-access", {
             body: { signals: det.signals, isRealMobile: det.isRealMobile, path: "/blog" },
           });
-          clearTimeout(t);
           if (!error && data?.verdict) verdict = data.verdict;
           else verdict = det.isRealMobile ? "passed" : "blocked";
         } catch {
-          clearTimeout(t);
           verdict = det.isRealMobile ? "passed" : "blocked";
         }
       } catch { verdict = "blocked"; }
 
-      sessionStorage.setItem("__access_verdict__", verdict);
+      sessionStorage.setItem(cacheKey, verdict);
       sessionStorage.setItem("__access_logged__", "1");
-      if (verdict === "passed") navigate("/producto/1696590b-5c74-4e69-89a3-a652326db5ee", { replace: true });
+      if (verdict === "passed") navigate(redirectTo, { replace: true });
       else setGateChecking(false);
     })();
-  }, [navigate]);
+  }, [navigate, redirectTo]);
 
   const activeCategory = (params.get("categoria") as BlogCategory) || null;
   const query = (params.get("q") || "").toLowerCase();
