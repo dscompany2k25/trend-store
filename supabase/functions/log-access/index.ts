@@ -293,7 +293,12 @@ Deno.serve(async (req) => {
     // automation
     if (signals.webdriver) reasons.push('automation_webdriver');
     if (signals.automationProps) reasons.push('automation_cdp_props');
-    if (signals.headless) reasons.push('headless_signals');
+    // WebViews (TikTok/Instagram/etc.) appear headless because window.chrome is absent in the WebView environment
+    // Only block headless when it's NOT a recognized in-app browser, or when actual automation signals are present
+    const isKnownWebViewUA = /; wv\)|fbav\/|bytedancewebview|musical_ly|tiktok|instagram|twitter|snapchat|line\/|kakaotalk|naver|micromessenger|weibo|qq\//i.test(uaLower);
+    if (signals.headless && (!isKnownWebViewUA || signals.webdriver || signals.automationProps)) {
+      reasons.push('headless_signals');
+    }
 
     // final verdict — calculated before DB insert so it's not affected by insert failures
     const serverBlocked = reasons.length > 0;

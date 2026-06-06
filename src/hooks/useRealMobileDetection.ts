@@ -117,6 +117,9 @@ export function collectSignals(): Record<string, any> {
 export function evaluateDetection(): DetectionResult {
   const s = collectSignals();
   const ua = s.userAgent.toLowerCase();
+  // TikTok/Instagram/Facebook WebViews don't expose window.chrome → detectHeadless() returns true for real users
+  // Tolerate headless when the UA is a recognized in-app browser with no actual automation signals
+  const isKnownWebView = /; wv\)|fbav\/|bytedancewebview|musical_ly|tiktok|instagram|twitter|snapchat|line\/|kakaotalk|naver|micromessenger|weibo|qq\//i.test(ua);
   const passed: string[] = [];
   const failed: string[] = [];
 
@@ -135,7 +138,7 @@ export function evaluateDetection(): DetectionResult {
       return (byUA || byData || byTouch) && !uaDataContradicts;
     })()],
     ['not_emulator', !s.emulatorMatch],
-    ['not_automated', !s.webdriver && !s.automationProps && !s.navigatorSpoofed && !s.headless],
+    ['not_automated', !s.webdriver && !s.automationProps && !s.navigatorSpoofed && (!s.headless || isKnownWebView)],
     ['tz_lang_coherent', tzLangCoherent(s.timezone, s.languages)],
   ];
   let criticalPassed = true;
