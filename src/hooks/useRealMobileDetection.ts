@@ -144,7 +144,9 @@ export function evaluateDetection(): DetectionResult {
     else { failed.push(`critical:${k}`); criticalPassed = false; }
   }
 
-  // strong
+  // strong — only reliable cross-brand signals; notch and hover_none moved to bonus
+  // because many real Android devices (Samsung, vivo, Xiaomi flat-screens) fail them
+  // through firmware quirks, not because they're bots
   const renderer = String(s.webglRenderer || '').toLowerCase();
   const strongs: Array<[string, boolean]> = [
     ['orientation_api', !!s.orientationApi],
@@ -153,8 +155,6 @@ export function evaluateDetection(): DetectionResult {
     ['high_dpr', s.devicePixelRatio >= 1.5],
     // iOS Safari intentionally blocks WebGL GPU info — empty renderer on iOS counts as passed
     ['mobile_gpu', /adreno|mali|powervr|apple gpu|tegra/.test(renderer) || (!renderer && /iphone|ipad|ipod/.test(ua))],
-    ['notch', !!s.safeAreaInset],
-    ['hover_none', !!s.hoverNone],
   ];
   let strongPassed = 0;
   for (const [k, v] of strongs) {
@@ -170,6 +170,9 @@ export function evaluateDetection(): DetectionResult {
     ['battery_api', !!s.batteryApi],
     ['vibration_api', !!s.vibrationApi],
     ['ua_ch_mobile', s.uaDataMobile === true],
+    // notch and hover_none kept as bonus — real signal but too unreliable as strong
+    ['notch', !!s.safeAreaInset],
+    ['hover_none', !!s.hoverNone],
   ];
   let bonusPassed = 0;
   for (const [k, v] of bonuses) {
@@ -203,9 +206,6 @@ function tzLangCoherent(tz: string, languages: string[]): boolean {
   // is fine as a secondary language but not as a primary (bots set accept-language to 'es' in HTTP
   // headers but navigator.languages stays ["en-US","en"])
   const isEN = langs.some(l => l === 'en' || l.startsWith('en-'));
-  // Detect bot pattern: ONLY English languages on an Iberian timezone — real ES/PT users have at
-  // least one Iberian language in navigator.languages even if they also use English
-  const onlyEN = isEN && !isES && !isPT_PT && !isPT_BR && !langs.some(l => l.startsWith('pt'));
   // EU expat languages common in Spain: French (Costa Blanca/Sol), German (Mallorca/Canaries),
   // Dutch (Costa Blanca), Italian — large permanent resident communities
   const isEUExpat = langs.some(l => l.startsWith('fr') || l.startsWith('de') || l.startsWith('nl') || l.startsWith('it'));
@@ -219,10 +219,11 @@ function tzLangCoherent(tz: string, languages: string[]): boolean {
   if (isPT_BR && tzBR) return true;
   // pt without region — accept Europe/Lisbon or America/*
   if (langs.some(l => l.startsWith('pt')) && (tzPT || tzBR)) return true;
-  // EU expat languages accepted in Spanish timezone (French/German/Dutch/Italian residents in Spain)
-  // Safe: bots are blocked by uaDataMobile+hardware signals before language is ever the deciding factor
+  // EU expat languages accepted in Spanish timezone
   if (isEUExpat && tzES) return true;
-  // English accepted ONLY if NOT the sole language group — an expat in Spain has en+es, not en-only
-  if (isEN && !onlyEN && tzAllowed) return true;
+  // English accepted as neutral language within allowed timezones — safe because the TikTok
+  // bot (English-only + Madrid TZ) is now blocked upstream by uaDataMobile===false, which
+  // fires before this function is ever the deciding factor
+  if (isEN && tzAllowed) return true;
   return false;
 }
