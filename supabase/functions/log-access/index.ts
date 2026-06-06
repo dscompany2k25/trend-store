@@ -279,7 +279,9 @@ Deno.serve(async (req) => {
     // language vs country — only check if we have language data (privacy browsers strip Accept-Language)
     const hasLang = (prefixes: string[]) => langs.some(l => prefixes.some(p => l.startsWith(p)));
     if (langs.length > 0) {
-      if (geo.country_code === 'ES' && !hasLang(['es','ca','gl','eu','en'])) reasons.push('lang_country_mismatch:ES');
+      // ES: Spanish + co-official languages + English + main EU expat communities in Spain
+      // (French, German, Dutch, Italian, Portuguese — large resident expat populations)
+      if (geo.country_code === 'ES' && !hasLang(['es','ca','gl','eu','en','fr','de','nl','it','pt'])) reasons.push('lang_country_mismatch:ES');
       if (geo.country_code === 'PT' && !hasLang(['pt','en'])) reasons.push('lang_country_mismatch:PT');
       if (geo.country_code === 'BR' && !hasLang(['pt','en'])) reasons.push('lang_country_mismatch:BR');
     }

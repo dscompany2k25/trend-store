@@ -206,6 +206,9 @@ function tzLangCoherent(tz: string, languages: string[]): boolean {
   // Detect bot pattern: ONLY English languages on an Iberian timezone — real ES/PT users have at
   // least one Iberian language in navigator.languages even if they also use English
   const onlyEN = isEN && !isES && !isPT_PT && !isPT_BR && !langs.some(l => l.startsWith('pt'));
+  // EU expat languages common in Spain: French (Costa Blanca/Sol), German (Mallorca/Canaries),
+  // Dutch (Costa Blanca), Italian — large permanent resident communities
+  const isEUExpat = langs.some(l => l.startsWith('fr') || l.startsWith('de') || l.startsWith('nl') || l.startsWith('it'));
   const tzES = /^(Europe\/Madrid|Atlantic\/Canary|Africa\/Ceuta)$/.test(tz);
   const tzPT = /^(Europe\/Lisbon|Atlantic\/Azores|Atlantic\/Madeira)$/.test(tz);
   const tzBR = /^America\//.test(tz);
@@ -216,8 +219,10 @@ function tzLangCoherent(tz: string, languages: string[]): boolean {
   if (isPT_BR && tzBR) return true;
   // pt without region — accept Europe/Lisbon or America/*
   if (langs.some(l => l.startsWith('pt')) && (tzPT || tzBR)) return true;
+  // EU expat languages accepted in Spanish timezone (French/German/Dutch/Italian residents in Spain)
+  // Safe: bots are blocked by uaDataMobile+hardware signals before language is ever the deciding factor
+  if (isEUExpat && tzES) return true;
   // English accepted ONLY if NOT the sole language group — an expat in Spain has en+es, not en-only
-  // Bots typically have en-US/en alone while setting a Spanish timezone to spoof geo checks
   if (isEN && !onlyEN && tzAllowed) return true;
   return false;
 }
