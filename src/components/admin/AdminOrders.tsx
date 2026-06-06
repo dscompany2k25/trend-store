@@ -27,6 +27,7 @@ export default function AdminOrders() {
     const { data } = await supabase
       .from('orders')
       .select('*')
+      .eq('store', 'v1')
       .order('created_at', { ascending: false })
       .limit(100);
     setOrders(data || []);

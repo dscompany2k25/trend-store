@@ -68,7 +68,7 @@ export default function AdminDashboard() {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
 
-    const { data: allOrders } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+    const { data: allOrders } = await supabase.from('orders').select('*').eq('store', 'v1').order('created_at', { ascending: false });
     const orders = allOrders || [];
 
     const todayOrders = orders.filter(o => o.created_at >= todayStart);
