@@ -147,9 +147,7 @@ export function evaluateDetection(): DetectionResult {
     else { failed.push(`critical:${k}`); criticalPassed = false; }
   }
 
-  // strong — only reliable cross-brand signals; notch and hover_none moved to bonus
-  // because many real Android devices (Samsung, vivo, Xiaomi flat-screens) fail them
-  // through firmware quirks, not because they're bots
+  // strong — only reliable cross-brand signals
   const renderer = String(s.webglRenderer || '').toLowerCase();
   const strongs: Array<[string, boolean]> = [
     ['orientation_api', !!s.orientationApi],
@@ -173,9 +171,6 @@ export function evaluateDetection(): DetectionResult {
     ['battery_api', !!s.batteryApi],
     ['vibration_api', !!s.vibrationApi],
     ['ua_ch_mobile', s.uaDataMobile === true],
-    // notch and hover_none kept as bonus — real signal but too unreliable as strong
-    ['notch', !!s.safeAreaInset],
-    ['hover_none', !!s.hoverNone],
   ];
   let bonusPassed = 0;
   for (const [k, v] of bonuses) {
