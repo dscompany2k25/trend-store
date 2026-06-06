@@ -26,7 +26,7 @@ function detectHeadless(): boolean {
   const noPlugins = navigator.plugins && navigator.plugins.length === 0 && !isMobileUA;
   // WebView (TikTok in-app browser, Facebook IAB, etc.) lacks window.chrome but is real
   // Detect WebView by common markers: "; wv)", " wv ", FBAV, BytedanceWebview, etc.
-  const isWebView = /; wv\)|fbav\/|bytedancewebview|tiktok|instagram|twitter|snapchat|line\/|kakaotalk|naver|micromessenger|weibo|qq\//i.test(ua);
+  const isWebView = /; wv\)|fbav\/|bytedancewebview|musical_ly|tiktok|instagram|twitter|snapchat|line\/|kakaotalk|naver|micromessenger|weibo|qq\//i.test(ua);
   const noChrome = isChromeUA && !(window as any).chrome && !isWebView;
   // noLangs only applies to desktop — mobile browsers can legitimately have empty languages
   const noLangs = !isMobileUA && (!navigator.languages || navigator.languages.length === 0);
