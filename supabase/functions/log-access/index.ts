@@ -302,7 +302,11 @@ Deno.serve(async (req) => {
     const androidVerified = isAndroidUA && signals.uaDataMobile === true && secChUaMobile === '?1' && !signals.webdriver && !signals.automationProps;
     const iosVerified = isIosUA && !signals.batteryApi && !signals.vibrationApi && !signals.webdriver && !signals.automationProps;
     const cleanMobileSignals = (androidVerified || iosVerified) && !isDatacenter && !!(geo.country_code && ALLOWED_COUNTRIES.has(geo.country_code));
-    const verdict = (!serverBlocked && (clientPassed || cleanMobileSignals)) ? 'passed' : 'blocked';
+    // headless_signals is a soft block: TikTok WebView and some Android WebViews legitimately
+    // trigger headless detection without being bots. All other server blocks (geo, datacenter,
+    // ASN, automation, ua_bot) remain hard — cleanMobileSignals cannot override them.
+    const hardBlocked = reasons.some(r => r !== 'headless_signals');
+    const verdict = (!hardBlocked && (clientPassed || cleanMobileSignals)) ? 'passed' : 'blocked';
 
     const categories = Array.from(new Set(reasons.map(categorize)));
     const { browser, os, device_type } = parseUA(ua);
