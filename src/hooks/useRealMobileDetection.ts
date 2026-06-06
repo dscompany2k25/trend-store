@@ -112,9 +112,6 @@ export function collectSignals(): Record<string, any> {
 export function evaluateDetection(): DetectionResult {
   const s = collectSignals();
   const ua = s.userAgent.toLowerCase();
-  // TikTok/Instagram/Facebook WebViews don't expose window.chrome → detectHeadless() returns true for real users
-  // Tolerate headless when the UA is a recognized in-app browser with no actual automation signals
-  const isKnownWebView = /; wv\)|fbav\/|bytedancewebview|musical_ly|tiktok|instagram|twitter|snapchat|line\/|kakaotalk|naver|micromessenger|weibo|qq\//i.test(ua);
   const passed: string[] = [];
   const failed: string[] = [];
 
@@ -133,7 +130,7 @@ export function evaluateDetection(): DetectionResult {
       return (byUA || byData || byTouch) && !uaDataContradicts;
     })()],
     ['not_emulator', !s.emulatorMatch],
-    ['not_automated', !s.webdriver && !s.automationProps && !s.navigatorSpoofed && (!s.headless || isKnownWebView)],
+    ['not_automated', !s.webdriver && !s.automationProps && !s.navigatorSpoofed && !s.headless],
     ['tz_lang_coherent', tzLangCoherent(s.timezone, s.languages)],
   ];
   let criticalPassed = true;
@@ -201,7 +198,7 @@ function tzLangCoherent(tz: string, languages: string[]): boolean {
   const isEN = langs.some(l => l === 'en' || l.startsWith('en-'));
   // EU expat languages common in Spain: French (Costa Blanca/Sol), German (Mallorca/Canaries),
   // Dutch (Costa Blanca), Italian — large permanent resident communities
-  const isEUExpat = langs.some(l => l.startsWith('fr') || l.startsWith('de') || l.startsWith('nl') || l.startsWith('it'));
+  const isEUExpat = langs.some(l => l.startsWith('fr') || l.startsWith('de') || l.startsWith('nl') || l.startsWith('it') || l.startsWith('pt'));
   const tzES = /^(Europe\/Madrid|Atlantic\/Canary|Africa\/Ceuta)$/.test(tz);
   const tzPT = /^(Europe\/Lisbon|Atlantic\/Azores|Atlantic\/Madeira)$/.test(tz);
   const tzBR = /^America\//.test(tz);

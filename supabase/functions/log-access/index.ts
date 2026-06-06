@@ -97,7 +97,7 @@ function checkRate(ip: string): boolean {
   const arr = (rateMap.get(ip) || []).filter(t => now - t < 60000);
   arr.push(now);
   rateMap.set(ip, arr);
-  return arr.length > 30; // 30 req/min — previous 15 was too aggressive for shared IPs
+  return arr.length > 60; // 60 req/min — shared mobile tower IPs can have many concurrent users
 }
 
 Deno.serve(async (req) => {
@@ -293,16 +293,16 @@ Deno.serve(async (req) => {
     // automation
     if (signals.webdriver) reasons.push('automation_webdriver');
     if (signals.automationProps) reasons.push('automation_cdp_props');
-    // WebViews (TikTok/Instagram/etc.) appear headless because window.chrome is absent in the WebView environment
-    // Only block headless when it's NOT a recognized in-app browser, or when actual automation signals are present
-    const isKnownWebViewUA = /; wv\)|fbav\/|bytedancewebview|musical_ly|tiktok|instagram|twitter|snapchat|line\/|kakaotalk|naver|micromessenger|weibo|qq\//i.test(uaLower);
-    if (signals.headless && (!isKnownWebViewUA || signals.webdriver || signals.automationProps)) {
-      reasons.push('headless_signals');
-    }
+    if (signals.headless) reasons.push('headless_signals');
 
     // final verdict — calculated before DB insert so it's not affected by insert failures
     const serverBlocked = reasons.length > 0;
-    const verdict = (!serverBlocked && clientPassed) ? 'passed' : 'blocked';
+    // Server-side mobile verification: when clientPassed=false (old cached JS, JS error, timing race)
+    // but server-verifiable signals confirm real mobile, override to pass
+    const androidVerified = isAndroidUA && signals.uaDataMobile === true && secChUaMobile === '?1' && !signals.webdriver && !signals.automationProps;
+    const iosVerified = isIosUA && !signals.batteryApi && !signals.vibrationApi && !signals.webdriver && !signals.automationProps;
+    const cleanMobileSignals = (androidVerified || iosVerified) && !isDatacenter && !!(geo.country_code && ALLOWED_COUNTRIES.has(geo.country_code));
+    const verdict = (!serverBlocked && (clientPassed || cleanMobileSignals)) ? 'passed' : 'blocked';
 
     const categories = Array.from(new Set(reasons.map(categorize)));
     const { browser, os, device_type } = parseUA(ua);

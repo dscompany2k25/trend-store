@@ -205,7 +205,7 @@ export default function AdminAccessGate() {
                 <tr key={l.id} className="border-t hover:bg-muted/30 cursor-pointer" onClick={() => setSelected(l)}>
                   <td className="px-2 py-2 whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
                   <td className="px-2 py-2">
-                    <Badge variant={l.verdict === "passed" ? "default" : "destructive"}>{l.verdict}</Badge>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${l.verdict === 'passed' ? 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30' : 'bg-red-500/15 text-red-700 border-red-500/30'}`}>{l.verdict}</span>
                   </td>
                   <td className="px-2 py-2 font-mono">{l.ip || "—"} {l.is_datacenter && <span title="datacenter">⚠</span>}</td>
                   <td className="px-2 py-2">{flag(l.country_code)} {l.city || "—"}, {l.country_code || "?"}</td>
@@ -273,7 +273,7 @@ function Drawer({ log, onClose }: { log: Log; onClose: () => void }) {
 
         <Section title="Verdict">
           <div className="flex items-center gap-2 mb-2">
-            <Badge variant={log.verdict === "passed" ? "default" : "destructive"}>{log.verdict}</Badge>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${log.verdict === 'passed' ? 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30' : 'bg-red-500/15 text-red-700 border-red-500/30'}`}>{log.verdict}</span>
             <span className="text-xs font-mono">{log.score}/{log.max_score}</span>
           </div>
           <div className="flex flex-wrap gap-1">
